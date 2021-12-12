@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="river_lock_v1">
+  <copyright>
+    Copyright 2021 The River Developers
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  </copyright>
+
+  <description summary="secure but flexible screenlocking">
+    This protocol is privileged and should only be exposed by the compositor
+    over a special Wayland socket. The compositor should provide some secure
+    way to set a client executable implementing this protocol that should
+    be run when the screen is locked.
+
+    When the compositor decides that the screen should be locked, it should run
+    this executable, passing the special Wayland socket fd with this protocol
+    exposed as an argument. TODO: standardize a flag for this? (e.g. `-s FD`)
+
+    A client implementing this protocol is expected to bind the
+    river_lock_manager_v1 interface on startup and create lock surfaces for
+    all current outputs and future ones as they are advertised.
+
+    If the lock client dies while the screen is locked the compositor should
+    run the client executable again. This mitigates bugs in lock clients
+    causing the screen to be prematurely unlocked. The compositor may choose
+    to continue to display the surfaces the client had mapped before it died
+    or alternatively fall back to a solid color, this is compositor policy.
+
+    Warning! The protocol described in this file is currently in the
+    testing phase. Backward compatible changes may be added together with
+    the corresponding interface version bump. Backward incompatible changes
+    can only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="river_lock_manager_v1" version="1">
+    <description summary="manage lock state and create lock surfaces">
+      Clients implementing this protocol are expected to bind this interface
+      on startup.
+
+      Binding this interface more than once is a protocol error.
+    </description>
+
+    <enum name="error">
+      <entry name="already_bound" value="0"
+        summary="the lock manager interface has already been bound"/>
+      <entry name="role" value="1"
+        summary="given wl_surface already has a role"/>
+      <entry name="duplicate_output" value="2"
+        summary="given output already has a lock surface"/>
+      <entry name="already_constructed" value="3"
+        summary="given wl_surface has a buffer attached or committed"/>
+    </enum>
+
+    <request name="unlock" type="destructor">
+      <description summary="unlock the screen, destroying the lock manager">
+        This request indicates that the screen should be unlocked, for example
+        because the user has entered their password and it has been verified
+        by the client.
+
+        The client is expected to exit after making this request.
+      </description>
+    </request>
+
+    <request name="get_lock_surface">
+      <description summary="create a lock surface for a given output">
+        Providing a wl_surface which already has a role or already has a buffer
+        attached or committed is a protocol error, as is attaching/committing
+        a buffer before the first river_lock_surface_v1.configure event.
+
+        Attempting to create more than one lock surface for a given output
+        is a protocol error.
+      </description>
+      <arg name="id" type="new_id" interface="river_lock_surface_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="output" type="object" interface="wl_output"/>
+    </request>
+  </interface>
+
+  <interface name="river_lock_surface_v1" version="1">
+    <description summary="create a lock surface for a given output">
+      Providing a wl_surface which already has a role or already has a buffer
+      attached or committed is a protocol error, as is attaching/committing
+      a buffer before the first river_lock_surface.configure event.
+
+      Attempting to create more than one lock surface for a given output
+      is a protocol error.
+    </description>
+
+    <enum name="error">
+      <entry name="destroy_while_locked" value="0"
+        summary="attempted to destroy lock surface while locked"/>
+      <entry name="dimensions_mismatch" value="0"
+        summary="failed to match ack'd width/height"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the lock surface">
+        This request destroys the lock surface. It is a protocol error to
+        make this request before the river_lock_manager_v1.unlock request.
+      </description>
+    </request>
+
+    <request name="ack_configure">
+      <description summary="ack a configure event">
+        When a configure event is received, if a client commits the surface
+        in response to the configure event, then the client must make an
+        ack_configure request sometime before the commit request, passing
+        along the serial of the configure event.
+
+        If the client receives multiple configure events before it can
+        respond to one, it only has to ack the last configure event.
+
+        A client is not required to commit immediately after sending an
+        ack_configure request - it may even ack_configure several times
+        before its next surface commit.
+
+        A client may send multiple ack_configure requests before committing,
+        but only the last request sent before a commit indicates which
+        configure event the client really is responding to.
+      </description>
+      <arg name="serial" type="uint" summary="serial from the configure event"/>
+    </request>
+
+    <event name="configure">
+      <description summary="the client should resize its surface">
+        This event is sent once on binding the interface and may be sent again
+        at the compositor's discretion, for example if output geometry changes.
+
+        The width and height are in surface-local coordinates and are exact
+        requirements. Failing to match these surface dimensions in the next
+        commit after acking a configure is a protocol error.
+      </description>
+      <arg name="serial" type="uint" summary="serial for use in ack_configure"/>
+      <arg name="width" type="uint"/>
+      <arg name="height" type="uint"/>
+    </event>
+  </interface>
+</protocol>
