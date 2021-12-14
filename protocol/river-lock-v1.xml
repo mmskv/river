@@ -16,25 +16,14 @@
     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
   </copyright>
 
-  <description summary="secure but flexible screenlocking">
-    This protocol is privileged and should only be exposed by the compositor
-    over a special Wayland socket. The compositor should provide some secure
-    way to set a client executable implementing this protocol that should
-    be run when the screen is locked.
+  <description summary="secure screenlocking with arbitrary graphics">
+    This protocol allows for a privileged Wayland client to lock the screen
+    and display arbitrary graphics while the screen is locked.
 
-    When the compositor decides that the screen should be locked, it should run
-    this executable, passing the special Wayland socket fd with this protocol
-    exposed as an argument. TODO: standardize a flag for this? (e.g. `-s FD`)
-
-    A client implementing this protocol is expected to bind the
-    river_lock_manager_v1 interface on startup and create lock surfaces for
-    all current outputs and future ones as they are advertised.
-
-    If the lock client dies while the screen is locked the compositor should
-    run the client executable again. This mitigates bugs in lock clients
-    causing the screen to be prematurely unlocked. The compositor may choose
-    to continue to display the surfaces the client had mapped before it died
-    or alternatively fall back to a solid color, this is compositor policy.
+    The client is responsible for performing authentication and informing the
+    compositor when the screen should be unlocked. If the client dies while
+    the screen is locked, the screen remains locked, perhaps permanently
+    according to compositor policy.
 
     Warning! The protocol described in this file is currently in the
     testing phase. Backward compatible changes may be added together with
@@ -43,36 +32,111 @@
   </description>
 
   <interface name="river_lock_manager_v1" version="1">
-    <description summary="manage lock state and create lock surfaces">
-      Clients implementing this protocol are expected to bind this interface
-      on startup.
-
-      Binding this interface more than once is a protocol error.
+    <description summary="used to lock the screen">
+      This interface is used to request that the screen be locked.
     </description>
 
-    <enum name="error">
-      <entry name="already_bound" value="0"
-        summary="the lock manager interface has already been bound"/>
-      <entry name="role" value="1"
-        summary="given wl_surface already has a role"/>
-      <entry name="duplicate_output" value="2"
-        summary="given output already has a lock surface"/>
-      <entry name="already_constructed" value="3"
-        summary="given wl_surface has a buffer attached or committed"/>
-    </enum>
-
-    <request name="unlock" type="destructor">
-      <description summary="unlock the screen, destroying the lock manager">
-        This request indicates that the screen should be unlocked, for example
-        because the user has entered their password and it has been verified
-        by the client.
-
-        The client is expected to exit after making this request.
+    <request name="destroy" type="destructor">
+      <description summary="destroy the lock manager object">
+        This informs the compositor that the lock manager object will no
+        longer be used.
       </description>
     </request>
 
+    <request name="lock">
+      <description summary="attempt to lock the screen">
+        This request creates a lock object and asks the compositor to lock
+        the screen. The compositor will send either the river_lock_v1.success
+        or river_lock_v1.failure event on the created object in response to
+        this request.
+      </description>
+      <arg name="id" type="new_id" interface="river_lock_v1"/>
+    </request>
+  </interface>
+
+  <interface name="river_lock_v1" version="1">
+    <description summary="manage lock state and create lock surfaces">
+      On creation of this object either the success or failure event will
+      immediately be sent.
+
+      The success event indicates that the screen is locked. This means that
+      the compositor should stop rendering and providing input to normal
+      clients. Instead the compositor should blank the screen with an opaque
+      color such that the normal content of the screen is fully hidden.
+
+      The only surfaces that should be rendered while the screen is locked
+      are the lock surfaces created through this interface and optionally,
+      at the compositor's discretion, special privileged surfaces such as
+      input methods or portions of desktop shell UIs.
+
+      If the client dies while the screen is locked, the compositor should not
+      unlock the screen in response. It is acceptable for the session to be
+      permanently locked if this happens. The compositor may choose to continue
+      to display the lock surfaces the client had mapped before it died or
+      alternatively fall back to a solid color, this is compositor policy.
+
+      Compositors may also allow a secure way to recover the session, the
+      details of this are compositor policy. Compositors may allow a new client
+      to create a river_lock_v1 object and take responsibility for unlocking
+      the screen, they may even start a new lock client instance automatically.
+    </description>
+
+    <enum name="error">
+      <entry name="destroy_while_locked" value="0"
+        summary="attempted to destroy lock object while locked"/>
+      <entry name="request_on_failed_lock" value="1"
+        summary="made a request other than destroy after failure was sent"/>
+      <entry name="role" value="2"
+        summary="given wl_surface already has a role"/>
+      <entry name="duplicate_output" value="3"
+        summary="given output already has a lock surface"/>
+      <entry name="already_constructed" value="4"
+        summary="given wl_surface has a buffer attached or committed"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the lock object">
+        This informs the compositor that the lock manager object will no
+        longer be used.
+
+        It is a protocol error to make this request if the success event
+        was received, the unlock request must be used instead.
+      </description>
+    </request>
+
+    <event name="success">
+      <description summary="lock successfully created">
+        This lock object is now responsible for displaying graphics for
+        the lockscreen and deciding when to unlock the screen.
+
+        Either this event or the failure event will be sent exactly once on
+        creation of this object.
+
+        If this event is received, making the destroy request is a protocol
+        error, the lock object may only be destroyed using the unlock request.
+      </description>
+    </event>
+
+    <event name="failure">
+      <description summary="failed to create lock">
+        Either there is already another river_lock_v1 object held by a client,
+        or the compositor has decided to deny the request to lock the screen
+        for some other reason.
+
+        Either this event or the success event will be sent exactly once on
+        creation of this object.
+
+        If this event is received, making any request other than destroy is
+        a protocol error.
+      </description>
+    </event>
+
     <request name="get_lock_surface">
       <description summary="create a lock surface for a given output">
+        If the lock is successful, the client is expected to create lock
+        surfaces for all outputs currently present and any new outputs as
+        they are advertised.
+
         Providing a wl_surface which already has a role or already has a buffer
         attached or committed is a protocol error, as is attaching/committing
         a buffer before the first river_lock_surface_v1.configure event.
@@ -84,16 +148,28 @@
       <arg name="surface" type="object" interface="wl_surface"/>
       <arg name="output" type="object" interface="wl_output"/>
     </request>
+
+    <request name="unlock" type="destructor">
+      <description summary="unlock the screen, destroying the object">
+        This request indicates that the screen should be unlocked, for example
+        because the user has entered their password and it has been verified
+        by the client.
+
+        This request also informs the compositor that the lock object will
+        no longer be used and may be safely destroyed.
+
+        After this request is made, this object and lock surfaces created
+        through this object should be destroyed by the client as they will
+        no longer be used by the compositor. Making any other request is a
+        protocol error.
+      </description>
+    </request>
   </interface>
 
   <interface name="river_lock_surface_v1" version="1">
-    <description summary="create a lock surface for a given output">
-      Providing a wl_surface which already has a role or already has a buffer
-      attached or committed is a protocol error, as is attaching/committing
-      a buffer before the first river_lock_surface.configure event.
-
-      Attempting to create more than one lock surface for a given output
-      is a protocol error.
+    <description summary="a surface displayed while the screen is locked">
+      The client may use lock surfaces to display a screensaver, render a dialog
+      to enter a password and unlock the screen, or however else it sees fit.
     </description>
 
     <enum name="error">
@@ -104,9 +180,12 @@
     </enum>
 
     <request name="destroy" type="destructor">
-      <description summary="destroy the lock surface">
-        This request destroys the lock surface. It is a protocol error to
-        make this request before the river_lock_manager_v1.unlock request.
+      <description summary="destroy the lock surface object">
+        This informs the compositor that the lock manager object will no
+        longer be used.
+
+        It is a protocol error to make this request before the
+        river_lock_v1.unlock request.
       </description>
     </request>
 
