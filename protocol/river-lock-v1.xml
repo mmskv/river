@@ -170,6 +170,11 @@
     <description summary="a surface displayed while the screen is locked">
       The client may use lock surfaces to display a screensaver, render a dialog
       to enter a password and unlock the screen, or however else it sees fit.
+
+      The compositor is free to handle keyboard/pointer focus for lock
+      surfaces however it chooses. A reasonable way to do this would be to
+      give the first lock surface created keyboard focus and change keyboard
+      focus if the user clicks on other surfaces.
     </description>
 
     <enum name="error">
