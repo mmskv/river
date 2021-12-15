@@ -20,6 +20,10 @@
     This protocol allows for a privileged Wayland client to lock the screen
     and display arbitrary graphics while the screen is locked.
 
+    The compositor may choose to restrict this protocol to a special lockscreen
+    client launched by the compositor itself or expose it to all privileged
+    clients, this is compositor policy.
+
     The client is responsible for performing authentication and informing the
     compositor when the screen should be unlocked. If the client dies while
     the screen is locked, the screen remains locked, perhaps permanently
