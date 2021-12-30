@@ -57,12 +57,12 @@ pub fn create(wlr_xdg_popup: *wlr.XdgPopup, parent: Parent) void {
     const parent_box = switch (parent) {
         .xdg_toplevel => |xdg_toplevel| &xdg_toplevel.view.pending.box,
         .layer_surface => |layer_surface| &layer_surface.box,
-        .drag_icon => unreachable,
+        .lock_surface, .drag_icon => unreachable,
     };
     const output_dimensions = switch (parent) {
         .xdg_toplevel => |xdg_toplevel| xdg_toplevel.view.output.getEffectiveResolution(),
         .layer_surface => |layer_surface| layer_surface.output.getEffectiveResolution(),
-        .drag_icon => unreachable,
+        .lock_surface, .drag_icon => unreachable,
     };
 
     // The output box relative to the parent of the xdg_popup

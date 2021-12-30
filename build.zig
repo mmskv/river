@@ -84,6 +84,7 @@ pub fn build(b: *zbs.Builder) !void {
     scanner.addProtocolPath("protocol/river-layout-v3.xml");
     scanner.addProtocolPath("protocol/wlr-layer-shell-unstable-v1.xml");
     scanner.addProtocolPath("protocol/wlr-output-power-management-unstable-v1.xml");
+    scanner.addProtocolPath("protocol/ext-session-lock-v1.xml");
 
     {
         const river = b.addExecutable("river", "river/main.zig");
