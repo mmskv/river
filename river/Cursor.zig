@@ -251,8 +251,8 @@ fn handleAxis(listener: *wl.Listener(*wlr.Pointer.event.Axis), event: *wlr.Point
     self.seat.wlr_seat.pointerNotifyAxis(
         event.time_msec,
         event.orientation,
-        event.delta,
-        event.delta_discrete,
+        0.1 * event.delta,
+        @floatToInt(i32, (0.1 * event.delta_discrete)),
         event.source,
     );
 }
