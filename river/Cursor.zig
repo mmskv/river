@@ -706,6 +706,9 @@ pub fn enterMode(self: *Self, mode: enum { move, resize }, view: *View) void {
 
     self.seat.focus(view);
 
+    // Don't float nonfloating views
+    if (!view.current.float) return;
+
     switch (mode) {
         .move => self.mode = .{ .move = .{ .view = view } },
         .resize => {
@@ -719,19 +722,9 @@ pub fn enterMode(self: *Self, mode: enum { move, resize }, view: *View) void {
         },
     }
 
-    // Automatically float all views being moved by the pointer, if
-    // their dimensions are set by a layout generator. If however the views
-    // are unarranged, leave them as non-floating so the next active
-    // layout can affect them.
-    if (!view.current.float and view.output.current.layout != null) {
-        view.pending.float = true;
-        view.float_box = view.current.box;
-        view.applyPending();
-    } else {
-        // The View.applyPending() call in the other branch starts
-        // the transaction needed after the seat.focus() call above.
-        server.root.startTransaction();
-    }
+    // The View.applyPending() call in the other branch starts
+    // the transaction needed after the seat.focus() call above.
+    server.root.startTransaction();
 
     // Clear cursor focus, so that the surface does not receive events
     self.seat.wlr_seat.pointerNotifyClearFocus();

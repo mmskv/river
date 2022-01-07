@@ -40,6 +40,7 @@ pub fn move(
         return Error.InvalidPhysicalDirection;
 
     const view = getView(seat) orelse return;
+    if (!view.current.float) return;
     switch (direction) {
         .up => view.move(0, -delta),
         .down => view.move(0, delta),
@@ -91,6 +92,7 @@ pub fn resize(
         return Error.InvalidOrientation;
 
     const view = getView(seat) orelse return;
+    if (!view.current.float) return;
     const border_width = @intCast(i32, server.config.border_width);
     const output_box = view.output.getEffectiveResolution();
     switch (orientation) {
